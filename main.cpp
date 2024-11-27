@@ -19,7 +19,9 @@ void bench_typical(tt::tt_metal::allocator::Algorithm& allocator, bm::State& sta
     assert(allocation_sizes.size() == temp_allocations.size());
     size_t n_runs = 100;
     for (auto _ : state) {
+        state.PauseTiming();
         allocator.clear();
+        state.ResumeTiming();
 
         for(size_t i = 0; i < n_runs; i++) {
             for(size_t j = 0; j < allocation_sizes.size(); j++) {
@@ -34,7 +36,7 @@ void bench_typical(tt::tt_metal::allocator::Algorithm& allocator, bm::State& sta
     }
 }
 
-void bench_worst(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+void bench_mixed(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
     std::vector<size_t> allocation_sizes = {64_KiB, 64_KiB, 120_KiB, 60_MiB, 256_KiB, 12_KiB, 16_MiB, 1_KiB};
     std::vector<size_t> temp_allocations = {16_KiB, 16_KiB, 16_KiB, 16_MiB, 32_KiB, 1_KiB, 1_MiB, 3_KiB};
     std::vector<std::optional<DeviceAddr>> allocations(allocation_sizes.size());
@@ -42,7 +44,9 @@ void bench_worst(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state
     assert(allocation_sizes.size() == temp_allocations.size());
     size_t n_runs = 150;
     for (auto _ : state) {
+        state.PauseTiming();
         allocator.clear();
+        state.ResumeTiming();
 
         for(size_t i = 0; i < n_runs; i++) {
             for(size_t j = 0; j < allocation_sizes.size(); j++) {
@@ -60,10 +64,30 @@ void bench_worst(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state
     }
 }
 
+void bench_worst(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+    size_t n_runs = 1000;
+    for (auto _ : state) {
+        state.PauseTiming();
+        allocator.clear();
+        state.ResumeTiming();
+
+        for(size_t i = 0; i < n_runs; i++) {
+            auto a = allocator.allocate(1_KiB);
+            auto b = allocator.allocate(2_KiB);
+            auto c = allocator.allocate(3_KiB);
+            auto d = allocator.allocate(4_KiB);
+            allocator.deallocate(a.value());
+            allocator.deallocate(c.value());
+        }
+    }
+}
+
 void bench_small(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
     size_t n_runs = 20;
     for (auto _ : state) {
+        state.PauseTiming();
         allocator.clear();
+        state.ResumeTiming();
 
         for(size_t i = 0; i < n_runs; i++) {
             auto a = allocator.allocate(1_KiB);
@@ -105,7 +129,6 @@ void bench_statistics(tt::tt_metal::allocator::Algorithm& allocator, bm::State& 
     for (auto _ : state) {
         bm::DoNotOptimize(allocator.get_statistics());
     }
-
 }
 
 template <typename Allocator, typename BenchFunc, typename ... Args>
@@ -126,10 +149,11 @@ void RegisterBenchmarksForAllocator(const std::string& allocator_name, Args&& ..
 
     std::vector<std::pair<std::string, std::function<void(tt::tt_metal::allocator::Algorithm&, bm::State&)>>> benchmarks = {
         {"WorstCase", bench_worst},
+        {"MixedAllocations", bench_mixed},
         {"TypicalCase", bench_typical},
         {"Small", bench_small},
         {"GetAvailableAddresses", bench_get_available_addresses},
-        {"Statistics", bench_statistics}
+        {"Statistics", bench_statistics},
     };
 
     for(auto& [name, func] : benchmarks) {

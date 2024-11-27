@@ -85,7 +85,8 @@ class FreeListOpt : public Algorithm {
     size_t allocate_in_block(size_t block_index, DeviceAddr alloc_size, size_t offset);
 
     inline static size_t get_size_segregated_index(DeviceAddr size_bytes) {
-        // std::log2 is SLOW, so we use a simple log2 implementation for integers
+        // std::log2 is SLOW, so we use a simple log2 implementation for integers. I assume GCC compiles this to a
+        // count leading zeros instruction then a subtraction.
         size_t lg = 0;
         size_t n = size_bytes / size_segregated_base;
         while(n >>= 1) {
@@ -106,7 +107,7 @@ class FreeListOpt : public Algorithm {
     size_t hash_device_address(DeviceAddr address) const;
     void insert_block_to_alloc_table(DeviceAddr address, size_t block_index);
     bool is_address_in_alloc_table(DeviceAddr address) const;
-    size_t get_and_remove_from_alloc_table(DeviceAddr address);
+    std::optional<size_t> get_and_remove_from_alloc_table(DeviceAddr address);
 };
 
 }  // namespace allocator

@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <vector>
 #include <array>
 
@@ -30,7 +31,7 @@ FreeListOpt::FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, Dev
     : Algorithm(max_size_bytes, offset_bytes, min_allocation_size, alignment) {
     
     // Reduce reallocations by reserving memory for free list components
-    constexpr size_t initial_block_count = 60;
+    constexpr size_t initial_block_count = 64;
     block_address_.reserve(initial_block_count);
     block_size_.reserve(initial_block_count);
     block_prev_block_.reserve(initial_block_count);
@@ -51,6 +52,9 @@ FreeListOpt::FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, Dev
 
 void FreeListOpt::init()
 {
+    max_size_bytes_ += shrink_size_;
+    shrink_size_ = 0;
+
     block_address_.clear();
     block_size_.clear();
     block_prev_block_.clear();
@@ -207,9 +211,14 @@ size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size,
 
 void FreeListOpt::deallocate(DeviceAddr absolute_address)
 {
-    TT_ASSERT(is_address_in_alloc_table(absolute_address), "Address {} not found in allocated block table", absolute_address);
+    // The existing FreeList implementation does not check if the address actually allocated. Just return if it's not
+    // Do we want to keep this behavior?
 
-    size_t block_index = get_and_remove_from_alloc_table(absolute_address);
+    auto block_index_opt = get_and_remove_from_alloc_table(absolute_address);
+    if(!block_index_opt.has_value()) {
+        return;
+    }
+    size_t block_index = *block_index_opt;
     block_is_allocated_[block_index] = false;
     ssize_t prev_block = block_prev_block_[block_index];
     ssize_t next_block = block_next_block_[block_index];
@@ -485,9 +494,8 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
 {
     const size_t size_segregated_index = get_size_segregated_index(block_size_[block_index]);
     auto& free_blocks = free_blocks_segregated_by_size_[size_segregated_index];
-    // 10ns per allocation faster than the below code on benchmark, is it worth it?
     free_blocks.push_back(block_index);
-    // The overhead is not worth it in benchmarks. Need real world data to confirm
+    // The overhead is not worth it in benchmarks. Need real world data to confirm. But certainly it'll help with fragmentation
     // std::vector<size_t>::iterator it;
     // // from experience, the lower bound is only faster after a certain number of elements
     // if(free_blocks.size() < 60) {
@@ -509,7 +517,7 @@ inline size_t FreeListOpt::hash_device_address(DeviceAddr address) const
 {
     // HACK: This hash is critical for performance, imperically found to be good for
     // the specific usecase
-    return ((address >> 32) ^ address ^ (address >> 12) * 3) % n_alloc_table_buckets;
+    return ((address) ^ (address >> 12) * 3) % n_alloc_table_buckets;
 }
 void FreeListOpt::insert_block_to_alloc_table(DeviceAddr address, size_t block_index)
 {
@@ -526,7 +534,7 @@ bool FreeListOpt::is_address_in_alloc_table(DeviceAddr address) const
     }
     return false;
 }
-size_t FreeListOpt::get_and_remove_from_alloc_table(DeviceAddr address)
+std::optional<size_t> FreeListOpt::get_and_remove_from_alloc_table(DeviceAddr address)
 {
     size_t bucket = hash_device_address(address);
     // It's common to deallocate the last allocated block, so search from the back
@@ -537,7 +545,7 @@ size_t FreeListOpt::get_and_remove_from_alloc_table(DeviceAddr address)
             return res;
         }
     }
-    TT_ASSERT(false, "Address {} not found in allocated block table", address);
+    return std::nullopt;
 }
 
 }
