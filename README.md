@@ -14,10 +14,10 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 
 ## Results
 
-My allocator is up to 40x faster then the current one in tt-metal.
+My allocator is orders of magnitude faster.
 
 ```
-2024-11-28T00:28:51+08:00
+2024-11-28T01:18:04+08:00
 Running ./tt-alloc-opt
 Run on (16 X 5132 MHz CPU s)
 CPU Caches:
@@ -25,26 +25,30 @@ CPU Caches:
   L1 Instruction 32 KiB (x8)
   L2 Unified 1024 KiB (x8)
   L3 Unified 16384 KiB (x1)
-Load Average: 0.85, 0.81, 0.81
+Load Average: 0.97, 0.90, 0.85
 ***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
 -------------------------------------------------------------------------------------
 Benchmark                                           Time             CPU   Iterations
 -------------------------------------------------------------------------------------
-FreeListOpt/WorstCase                           55520 ns        55320 ns        12692
-FreeListOpt/TypicalCase                         30077 ns        29968 ns        23665
-FreeListOpt/Small                                3408 ns         3397 ns       205894
-FreeListOpt/GetAvailableAddresses                 416 ns          415 ns      1687898
-FreeListOpt/Statistics                            377 ns          376 ns      1851977
-FreeList[BestMatch]/WorstCase                 2316698 ns      2309410 ns          303
-FreeList[BestMatch]/TypicalCase                903675 ns       900548 ns          772
-FreeList[BestMatch]/Small                        8666 ns         8635 ns        81469
-FreeList[BestMatch]/GetAvailableAddresses         687 ns          685 ns       971112
-FreeList[BestMatch]/Statistics                   1098 ns         1095 ns       638956
-FreeList[FirstMatch]/WorstCase                2347360 ns      2339262 ns          299
-FreeList[FirstMatch]/TypicalCase               895072 ns       891667 ns          789
-FreeList[FirstMatch]/Small                       8131 ns         8102 ns        86482
-FreeList[FirstMatch]/GetAvailableAddresses        820 ns          818 ns       919654
-FreeList[FirstMatch]/Statistics                  1102 ns         1098 ns       637792
+FreeListOpt/WorstCase                          112556 ns       112204 ns         6230
+FreeListOpt/MixedAllocations                    55680 ns        55493 ns        12486
+FreeListOpt/TypicalCase                         30600 ns        30509 ns        22802
+FreeListOpt/Small                                3658 ns         3649 ns       190079
+FreeListOpt/GetAvailableAddresses                 415 ns          413 ns      1735803
+FreeListOpt/Statistics                            378 ns          377 ns      1861140
+FreeList[BestMatch]/WorstCase                 8645952 ns      8602799 ns           81
+FreeList[BestMatch]/MixedAllocations          2390974 ns      2381924 ns          306
+FreeList[BestMatch]/TypicalCase                880462 ns       877334 ns          787
+FreeList[BestMatch]/Small                        7669 ns         7646 ns        92969
+FreeList[BestMatch]/GetAvailableAddresses         800 ns          797 ns       957576
+FreeList[BestMatch]/Statistics                   1123 ns         1118 ns       639828
+FreeList[FirstMatch]/WorstCase                7732526 ns      7702848 ns           90
+FreeList[FirstMatch]/MixedAllocations         2399624 ns      2390824 ns          295
+FreeList[FirstMatch]/TypicalCase               890122 ns       886873 ns          792
+FreeList[FirstMatch]/Small                       7601 ns         7577 ns        89249
+FreeList[FirstMatch]/GetAvailableAddresses        764 ns          761 ns       924639
+FreeList[FirstMatch]/Statistics                  1107 ns         1104 ns       639846
+
 ```
 
 ## License
