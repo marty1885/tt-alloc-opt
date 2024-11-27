@@ -15,8 +15,8 @@
 #include "tt_metal/impl/allocator/algorithms/allocator_algorithm.hpp"
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
-#include <unordered_set>
 #include <vector>
 #include <array>
 
@@ -43,7 +43,7 @@ FreeListOpt::FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, Dev
     }
     allocated_block_table_.resize(n_alloc_table_buckets);
     for(auto& bucket : allocated_block_table_) {
-        bucket.reserve(n_alloc_table_bucket_size);
+        bucket.reserve(n_alloc_table_init_bucket_size);
     }
 
     init();
@@ -114,7 +114,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     }
     TT_ASSERT(segregated_list != nullptr, "Segegated list is null");
     TT_ASSERT(segregated_item_index < segregated_list->size(), "Segegated item index out of bounds");
-    TT_ASSERT(block_is_allocated_[target_block_index] == false, "Block is already allocated");
+    TT_ASSERT(block_is_allocated_[target_block_index] == false, "Block we are trying allocate from is already allocated");
     segregated_list->erase(segregated_list->begin() + segregated_item_index);
 
 
@@ -169,7 +169,6 @@ size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size,
     bool right_aligned = offset + alloc_size == block_size_[block_index];
 
     // Create free space if not left/right aligned
-
     if(!left_aligned) {
         size_t free_block_size = offset;
         DeviceAddr free_block_address = block_address_[block_index];
@@ -317,6 +316,7 @@ Statistics FreeListOpt::get_statistics() const {
             total_free_bytes += block_size_[i];
             if(block_size_[i] >= largest_free_block_bytes) {
                 largest_free_block_bytes = block_size_[i];
+                // XXX: This is going to overflow
                 largest_free_block_addrs.push_back(block_address_[i] + offset_bytes_);
             }
         }
@@ -380,9 +380,12 @@ void FreeListOpt::dump_blocks(std::ostream &out) const
         out << leftpad(header, pad) << " ";
     }
     out << std::endl;
-    std::unordered_set<size_t> free_meta_blocks(free_meta_block_indices_.begin(), free_meta_block_indices_.end());
+    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
+    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
+        free_meta_blocks[free_meta_block_indices_[i]] = 1;
+    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(free_meta_blocks.find(i) != free_meta_blocks.end()) {
+        if(free_meta_blocks[i]) {
             continue;
         }
         out << leftpad_num(i, pad) << " " << leftpad_num(block_address_[i], pad) << " "
@@ -403,21 +406,27 @@ void FreeListOpt::shrink_size(DeviceAddr shrink_size, bool bottom_up)
         shrink_size,
         max_size_bytes_);
     
-    // loop and scan the free list to find if the shrink cut into any allocated block
+    // loop and scan the block list to find if the shrink cut into any allocated block
     size_t block_to_shrink = -1;
+    // TODO: There must be a way to force the beginning of all blocks be at index 0
+    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
+    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
+        free_meta_blocks[free_meta_block_indices_[i]] = 1;
+    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(block_is_allocated_[i]) {
+        if(free_meta_blocks[i]) {
+            continue;
+        }
+        else if(block_is_allocated_[i]) {
             TT_FATAL(
                 block_address_[i] >= shrink_size,
                 "Shrink size {} cuts into allocated block at address {}",
                 shrink_size,
                 block_address_[i]);
         }
-        else {
-            if(block_address_[i] <= shrink_size && block_address_[i] + block_size_[i] >= shrink_size) {
-                block_to_shrink = i;
-                break;
-            }
+        else if(block_address_[i] <= shrink_size && block_address_[i] + block_size_[i] >= shrink_size) {
+            block_to_shrink = i;
+            break;
         }
     }
 
