@@ -17,5 +17,5 @@ target_precompile_headers(tt-alloc-opt PRIVATE
     <vector>
     <map>
     <cstdint>
-    <gtest/gtest.h>
+    <benchmark/benchmark.h>
     )

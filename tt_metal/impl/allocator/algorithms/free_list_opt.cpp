@@ -1,14 +1,24 @@
-// SPDX-FileCopyrightText: © 2024 Tenstorrent Inc.
-//
-// SPDX-License-Identifier: Apache-2.0
+// Copyright Martin Change <marty188586@gmail.com>
+// 
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+// REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+// AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+// INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+// LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+// OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+// PERFORMANCE OF THIS SOFTWARE.
 
 #include "tt_metal/impl/allocator/algorithms/free_list_opt.hpp"
+#include "tt_metal/impl/allocator/algorithms/allocator_algorithm.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <unordered_set>
 #include <vector>
-#include "tt_metal/impl/allocator/algorithms/allocator_algorithm.hpp"
+#include <array>
 
 namespace tt {
 
@@ -31,6 +41,10 @@ FreeListOpt::FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, Dev
     for(auto& free_blocks : free_blocks_segregated_by_size_) {
         free_blocks.reserve(initial_block_count);
     }
+    allocated_block_table_.resize(n_alloc_table_buckets);
+    for(auto& bucket : allocated_block_table_) {
+        bucket.reserve(n_alloc_table_bucket_size);
+    }
 
     init();
 }
@@ -43,7 +57,9 @@ void FreeListOpt::init()
     block_next_block_.clear();
     block_is_allocated_.clear();
     free_meta_block_indices_.clear();
-    allocated_block_table_.clear();
+    for(auto& bucket : allocated_block_table_) {
+        bucket.clear();
+    }
     for(auto& free_blocks : free_blocks_segregated_by_size_) {
         free_blocks.clear();
     }
@@ -74,7 +90,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     for(size_t i = size_segregated_index; i < size_segregated_count; i++) {
         auto& free_blocks = free_blocks_segregated_by_size_[i];
         ssize_t increment = bottom_up ? 1 : -1;
-        for(ssize_t j = 0; j < free_blocks.size() && j >= 0; j += increment) {
+        for(ssize_t j = bottom_up ? 0 : free_blocks.size() - 1; j >= 0 && j < free_blocks.size(); j += increment) {
             size_t block_index = free_blocks[j];
             if(block_size_[block_index] == alloc_size) {
                 target_block_index = block_index;
@@ -112,8 +128,8 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     DeviceAddr start_address = block_address_[target_block_index];
 
     TT_FATAL(start_address + offset_bytes_ < address_limit || address_limit == 0, "Out of Memory: Cannot allocate at an address below {}. Allocation ends at {}", address_limit, start_address + offset_bytes_);
-    TT_ASSERT(allocated_block_table_.find(start_address) == allocated_block_table_.end(), "Block already allocated");
-    allocated_block_table_[start_address] = target_block_index;
+    TT_ASSERT(!is_address_in_alloc_table(start_address), "Address {} already allocated", start_address);
+    insert_block_to_alloc_table(start_address, allocated_block_index);
     return block_address_[target_block_index] + offset_bytes_;
 }
 
@@ -153,7 +169,7 @@ size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size,
 {
     if(block_size_[block_index] == alloc_size) {
         block_is_allocated_[block_index] = true;
-        allocated_block_table_[block_address_[block_index]] = block_index;
+        insert_block_to_alloc_table(block_address_[block_index], block_index);
         return block_index;
     }
 
@@ -193,17 +209,16 @@ size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size,
         insert_block_to_segregated_list(new_block_index);
     }
     block_is_allocated_[block_index] = true;
-    allocated_block_table_[block_address_[block_index]] = block_index;
+    insert_block_to_alloc_table(block_address_[block_index], block_index);
 
     return block_index;
 }
 
 void FreeListOpt::deallocate(DeviceAddr absolute_address)
 {
-    TT_ASSERT(allocated_block_table_.find(absolute_address - offset_bytes_) != allocated_block_table_.end(), "Block not allocated. Invalid address or double free");
+    TT_ASSERT(is_address_in_alloc_table(absolute_address), "Address {} not found in allocated block table", absolute_address);
 
-    size_t block_index = allocated_block_table_[absolute_address - offset_bytes_];
-    allocated_block_table_.erase(block_index);
+    size_t block_index = get_and_remove_from_alloc_table(absolute_address);
     block_is_allocated_[block_index] = false;
     ssize_t prev_block = block_prev_block_[block_index];
     ssize_t next_block = block_next_block_[block_index];
@@ -463,7 +478,7 @@ void FreeListOpt::reset_size()
         }
     }
     size_t new_block_index = alloc_meta_block(0, shrink_size_, -1, lowest_block_index, true);
-    allocated_block_table_[0] = new_block_index;
+    insert_block_to_alloc_table(0, new_block_index);
     TT_ASSERT(block_prev_block_[lowest_block_index] == -1, "Lowest block should not have a previous block");
     block_prev_block_[lowest_block_index] = new_block_index;
     deallocate(0);
@@ -477,22 +492,57 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
     const size_t size_segregated_index = get_size_segregated_index(block_size_[block_index]);
     auto& free_blocks = free_blocks_segregated_by_size_[size_segregated_index];
     // 10ns per allocation faster than the below code on benchmark, is it worth it?
-    free_blocks.push_back(block_index);
-    // std::vector<size_t>::iterator it;
+    // free_blocks.push_back(block_index);
+    std::vector<size_t>::iterator it;
     // from experience, the lower bound is only faster after a certain number of elements
-    // if(free_blocks.size() < 60) {
-    //     for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
-    //         if(block_address_[*it] > block_address_[block_index]) {
-    //             break;
-    //         }
-    //     }
-    // }
-    // else {
-    //     it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
-    //         return block_address_[a] < block_address_[b];
-    //     });
-    // }
-    // free_blocks.insert(it, block_index);
+    if(free_blocks.size() < 60) {
+        for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
+            if(block_address_[*it] > block_address_[block_index]) {
+                break;
+            }
+        }
+    }
+    else {
+        it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
+            return block_address_[a] < block_address_[b];
+        });
+    }
+    free_blocks.insert(it, block_index);
+}
+
+inline size_t FreeListOpt::hash_device_address(DeviceAddr address) const
+{
+    // HACK: This hash is critical for performance, imperically found to be good for
+    // the specific usecase
+    return ((address >> 32) ^ address ^ (address >> 12) * 3) % n_alloc_table_buckets;
+}
+void FreeListOpt::insert_block_to_alloc_table(DeviceAddr address, size_t block_index)
+{
+    size_t bucket = hash_device_address(address);
+    allocated_block_table_[bucket].emplace_back(address, block_index);
+}
+bool FreeListOpt::is_address_in_alloc_table(DeviceAddr address) const
+{
+    size_t bucket = hash_device_address(address);
+    for(const auto& [addr, block_index] : allocated_block_table_[bucket]) {
+        if(addr == address) {
+            return true;
+        }
+    }
+    return false;
+}
+size_t FreeListOpt::get_and_remove_from_alloc_table(DeviceAddr address)
+{
+    size_t bucket = hash_device_address(address);
+    // It's common to deallocate the last allocated block, so search from the back
+    for(size_t i = allocated_block_table_[bucket].size() - 1; i >= 0; i--) {
+        if(allocated_block_table_[bucket][i].first == address) {
+            auto res = allocated_block_table_[bucket][i].second;
+            allocated_block_table_[bucket].erase(allocated_block_table_[bucket].begin() + i);
+            return res;
+        }
+    }
+    TT_ASSERT(false, "Address {} not found in allocated block table", address);
 }
 
 }
