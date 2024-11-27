@@ -87,7 +87,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     std::vector<size_t>* segregated_list = nullptr;
     size_t segregated_item_index = 0;
 
-    for(size_t i = size_segregated_index; i < size_segregated_count; i++) {
+    for(size_t i = size_segregated_index; i < free_blocks_segregated_by_size_.size(); i++) {
         auto& free_blocks = free_blocks_segregated_by_size_[i];
         ssize_t increment = bottom_up ? 1 : -1;
         for(ssize_t j = bottom_up ? 0 : free_blocks.size() - 1; j >= 0 && j < free_blocks.size(); j += increment) {
@@ -124,12 +124,8 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
         offset = block_size_[target_block_index] - alloc_size;
     }
     size_t allocated_block_index = allocate_in_block(target_block_index, alloc_size, offset);
-    return block_address_[allocated_block_index] + offset_bytes_;
-    DeviceAddr start_address = block_address_[target_block_index];
-
+    DeviceAddr start_address = block_address_[allocated_block_index];
     TT_FATAL(start_address + offset_bytes_ < address_limit || address_limit == 0, "Out of Memory: Cannot allocate at an address below {}. Allocation ends at {}", address_limit, start_address + offset_bytes_);
-    TT_ASSERT(!is_address_in_alloc_table(start_address), "Address {} already allocated", start_address);
-    insert_block_to_alloc_table(start_address, allocated_block_index);
     return block_address_[target_block_index] + offset_bytes_;
 }
 
@@ -152,13 +148,9 @@ std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_s
     // Find the relevant size segregated list
     size_t size_segregated_index = get_size_segregated_index(block_size_[target_block_index]);
     std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
-    TT_ASSERT(segregated_list.size() > 0, "Size segregated list is empty");
-    for(size_t i = 0; i < segregated_list.size(); i++) {
-        if(segregated_list[i] == target_block_index) {
-            segregated_list.erase(segregated_list.begin() + i);
-            break;
-        }
-    }
+    auto it = std::find(segregated_list.begin(), segregated_list.end(), target_block_index);
+    TT_ASSERT(it != segregated_list.end(), "Block not found in size segregated list");
+    segregated_list.erase(it);
 
     size_t offset = absolute_start_address - block_address_[target_block_index];
     size_t alloc_block_index = allocate_in_block(target_block_index, alloc_size, offset);
@@ -228,12 +220,9 @@ void FreeListOpt::deallocate(DeviceAddr absolute_address)
         // Look into the size segregated list to remove the block
         size_t size_segregated_index = get_size_segregated_index(block_size_[prev_block]);
         std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
-        for(size_t i = 0; i < segregated_list.size(); i++) {
-            if(segregated_list[i] == prev_block) {
-                segregated_list.erase(segregated_list.begin() + i);
-                break;
-            }
-        }
+        auto it = std::find(segregated_list.begin(), segregated_list.end(), prev_block);
+        TT_ASSERT(it != segregated_list.end(), "Block not found in size segregated list");
+        segregated_list.erase(it);
 
         block_size_[prev_block] += block_size_[block_index];
         block_next_block_[prev_block] = next_block;
@@ -249,12 +238,9 @@ void FreeListOpt::deallocate(DeviceAddr absolute_address)
         // Look into the size segregated list to remove the block
         size_t size_segregated_index = get_size_segregated_index(block_size_[next_block]);
         std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
-        for(size_t i = 0; i < segregated_list.size(); i++) {
-            if(segregated_list[i] == next_block) {
-                segregated_list.erase(segregated_list.begin() + i);
-                break;
-            }
-        }
+        auto it = std::find(segregated_list.begin(), segregated_list.end(), next_block);
+        TT_ASSERT(it != segregated_list.end(), "Block not found in size segregated list");
+        segregated_list.erase(it);
 
         block_size_[block_index] += block_size_[next_block];
         block_next_block_[block_index] = block_next_block_[next_block];
@@ -388,7 +374,7 @@ void FreeListOpt::dump_blocks(std::ostream &out) const
         }
         return leftpad(std::to_string(num), width);
     };
-    const size_t pad = 10;
+    const size_t pad = 12;
     std::array<std::string, 6> headers = {"Block", "Address", "Size", "PrevID", "NextID", "Allocated"};
     for(auto& header : headers) {
         out << leftpad(header, pad) << " ";
@@ -437,19 +423,16 @@ void FreeListOpt::shrink_size(DeviceAddr shrink_size, bool bottom_up)
 
     TT_FATAL(block_to_shrink != -1, "Shrink size {} does not align with any block. This must be a bug", shrink_size);
 
-    std::vector<size_t>* segregated_list = nullptr;
-    size_t segregated_item_index = 0;
 
     // Find the relevant size segregated list
     size_t size_segregated_index = get_size_segregated_index(block_size_[block_to_shrink]);
-    segregated_list = &free_blocks_segregated_by_size_[size_segregated_index];
-    for(size_t i = 0; i < segregated_list->size(); i++) {
-        if((*segregated_list)[i] == block_to_shrink) {
-            segregated_item_index = i;
+    std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
+    for(size_t i = 0; i < segregated_list.size(); i++) {
+        if(segregated_list[i] == block_to_shrink) {
+            segregated_list.erase(segregated_list.begin() + i);
             break;
         }
     }
-    segregated_list->erase(segregated_list->begin() + segregated_item_index);
 
     // Shrink the block
     block_size_[block_to_shrink] -= shrink_size;
@@ -471,7 +454,7 @@ void FreeListOpt::reset_size()
     }
 
     // Create a new block, mark it as allocated and deallocate the old block so coalescing can happen
-    DeviceAddr lowest_address = ~(DeviceAddr)0;
+    DeviceAddr lowest_address = std::numeric_limits<DeviceAddr>::max();
     size_t lowest_block_index = -1;
     for(size_t i = 0; i < block_address_.size(); i++) {
         if(block_address_[i] < lowest_address) {
@@ -494,22 +477,23 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
     const size_t size_segregated_index = get_size_segregated_index(block_size_[block_index]);
     auto& free_blocks = free_blocks_segregated_by_size_[size_segregated_index];
     // 10ns per allocation faster than the below code on benchmark, is it worth it?
-    // free_blocks.push_back(block_index);
-    std::vector<size_t>::iterator it;
-    // from experience, the lower bound is only faster after a certain number of elements
-    if(free_blocks.size() < 60) {
-        for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
-            if(block_address_[*it] > block_address_[block_index]) {
-                break;
-            }
-        }
-    }
-    else {
-        it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
-            return block_address_[a] < block_address_[b];
-        });
-    }
-    free_blocks.insert(it, block_index);
+    free_blocks.push_back(block_index);
+    // The overhead is not worth it in benchmarks. Need real world data to confirm
+    // std::vector<size_t>::iterator it;
+    // // from experience, the lower bound is only faster after a certain number of elements
+    // if(free_blocks.size() < 60) {
+    //     for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
+    //         if(block_address_[*it] > block_address_[block_index]) {
+    //             break;
+    //         }
+    //     }
+    // }
+    // else {
+    //     it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
+    //         return block_address_[a] < block_address_[b];
+    //     });
+    // }
+    // free_blocks.insert(it, block_index);
 }
 
 inline size_t FreeListOpt::hash_device_address(DeviceAddr address) const
