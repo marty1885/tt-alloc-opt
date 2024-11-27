@@ -346,6 +346,8 @@ Statistics FreeListOpt::get_statistics() const {
         .total_allocated_bytes = total_allocated_bytes,
         .total_free_bytes = total_free_bytes,
         .largest_free_block_bytes = largest_free_block_bytes,
+        // Why do we need largest_free_block_addrs? Without it the entire loop can be removed
+        // and statistics can be tracked during allocation and deallocation
         .largest_free_block_addrs = std::move(largest_free_block_addrs),
     };
 }

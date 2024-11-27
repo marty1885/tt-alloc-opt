@@ -60,45 +60,91 @@ void bench_worst(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state
     }
 }
 
-static void BM_FreeListOpt_WorstCase(bm::State& state) {
-    // Emulate a Wormhole device with 12 GiB of memory
-    tt::tt_metal::allocator::FreeListOpt allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64);
-    bench_worst(allocator, state);
-}
-static void BM_FreeListOpt_TypicalCase(bm::State& state) {
-    // Emulate a Wormhole device with 12 GiB of memory
-    tt::tt_metal::allocator::FreeListOpt allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64);
-    bench_typical(allocator, state);
+void bench_small(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+    size_t n_runs = 20;
+    for (auto _ : state) {
+        allocator.clear();
+
+        for(size_t i = 0; i < n_runs; i++) {
+            auto a = allocator.allocate(1_KiB);
+            allocator.deallocate(a.value());
+            a = allocator.allocate(1_KiB);
+            auto b = allocator.allocate(2_KiB);
+            auto c = allocator.allocate(3_KiB);
+            auto d = allocator.allocate_at_address(25_MiB, 2_KiB);
+            auto e = allocator.allocate(4_KiB);
+            allocator.deallocate(a.value());
+            allocator.deallocate(b.value());
+            allocator.deallocate(e.value());
+            allocator.deallocate(c.value());
+        }
+    }
 }
 
-static void BM_FreeList_WorstCase_BestMatch(bm::State& state) {
-    tt::tt_metal::allocator::FreeList allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64, tt::tt_metal::allocator::FreeList::SearchPolicy::BEST);
-    bench_worst(allocator, state);
-}
-static void BM_FreeList_TypicalCase_BestMatch(bm::State& state) {
-    tt::tt_metal::allocator::FreeList allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64, tt::tt_metal::allocator::FreeList::SearchPolicy::BEST);
-    bench_typical(allocator, state);
-}
-
-static void BM_FreeList_WorstCase_FirstMatch(bm::State& state) {
-    tt::tt_metal::allocator::FreeList allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64, tt::tt_metal::allocator::FreeList::SearchPolicy::FIRST);
-    bench_worst(allocator, state);
-}
-static void BM_FreeList_TypicalCase_FirstMatch(bm::State& state) {
-    tt::tt_metal::allocator::FreeList allocator(1024UL * 1024 * 1024 * 12, 0, 64, 64, tt::tt_metal::allocator::FreeList::SearchPolicy::FIRST);
-    bench_typical(allocator, state);
+void bench_get_available_addresses(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+    std::vector<std::optional<DeviceAddr>> allocations(450);
+    for(size_t i = 0; i < allocations.size(); i++) {
+        allocations[i] = allocator.allocate(1_KiB);
+    }
+    for(size_t i = 0; i < allocations.size(); i+=2) {
+        allocator.deallocate(allocations[i].value());
+    }
+    for (auto _ : state) {
+        bm::DoNotOptimize(allocator.available_addresses(1_KiB));
+    }
 }
 
+void bench_statistics(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+    std::vector<std::optional<DeviceAddr>> allocations(450);
+    for(size_t i = 0; i < allocations.size(); i++) {
+        allocations[i] = allocator.allocate(1_KiB);
+    }
+    for(size_t i = 0; i < allocations.size(); i+=2) {
+        allocator.deallocate(allocations[i].value());
+    }
+    for (auto _ : state) {
+        bm::DoNotOptimize(allocator.get_statistics());
+    }
 
+}
 
-BENCHMARK(BM_FreeListOpt_WorstCase);
-BENCHMARK(BM_FreeListOpt_TypicalCase);
-BENCHMARK(BM_FreeList_WorstCase_BestMatch);
-BENCHMARK(BM_FreeList_TypicalCase_BestMatch);
-BENCHMARK(BM_FreeList_WorstCase_FirstMatch);
-BENCHMARK(BM_FreeList_TypicalCase_FirstMatch);
+template <typename Allocator, typename BenchFunc, typename ... Args>
+void RegisterBenchmark(const std::string& name, BenchFunc func, Args&& ... args) {
+    auto benchmark_func = [=](bm::State& state) {
+        Allocator allocator(args...);
+        func(allocator, state);
+    };
+    bm::RegisterBenchmark(name.c_str(), benchmark_func);
+}
+
+template <typename Allocator, typename ... Args>
+void RegisterBenchmarksForAllocator(const std::string& allocator_name, Args&& ... args) {
+    size_t memory_size = 12_GiB;
+    size_t alignment = 0;
+    size_t min_alloc_size = 64;
+    size_t max_alloc_size = 64;
+
+    std::vector<std::pair<std::string, std::function<void(tt::tt_metal::allocator::Algorithm&, bm::State&)>>> benchmarks = {
+        {"WorstCase", bench_worst},
+        {"TypicalCase", bench_typical},
+        {"Small", bench_small},
+        {"GetAvailableAddresses", bench_get_available_addresses},
+        {"Statistics", bench_statistics}
+    };
+
+    for(auto& [name, func] : benchmarks) {
+        RegisterBenchmark<Allocator>(allocator_name + "/" + name, func, memory_size, alignment, min_alloc_size, max_alloc_size, args...);
+    }
+}
+
+void RegisterAllBenchmarks() {
+    RegisterBenchmarksForAllocator<tt::tt_metal::allocator::FreeListOpt>("FreeListOpt");
+    RegisterBenchmarksForAllocator<tt::tt_metal::allocator::FreeList>("FreeList[BestMatch]", tt::tt_metal::allocator::FreeList::SearchPolicy::BEST);
+    RegisterBenchmarksForAllocator<tt::tt_metal::allocator::FreeList>("FreeList[FirstMatch]", tt::tt_metal::allocator::FreeList::SearchPolicy::FIRST);
+}
 
 int main(int argc, char** argv) {
     bm::Initialize(&argc, argv);
+    RegisterAllBenchmarks();
     bm::RunSpecifiedBenchmarks();
 }
