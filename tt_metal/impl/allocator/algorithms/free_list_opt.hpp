@@ -105,7 +105,7 @@ class FreeListOpt : public Algorithm {
     void free_meta_block(size_t block_index);
 
     // Operations on the allocated block table
-    size_t hash_device_address(DeviceAddr address) const;
+    static size_t hash_device_address(DeviceAddr address);
     void insert_block_to_alloc_table(DeviceAddr address, size_t block_index);
     bool is_address_in_alloc_table(DeviceAddr address) const;
     std::optional<size_t> get_and_remove_from_alloc_table(DeviceAddr address);

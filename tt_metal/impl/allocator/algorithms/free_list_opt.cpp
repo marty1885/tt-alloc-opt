@@ -532,7 +532,7 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
     free_blocks.insert(it, block_index);
 }
 
-inline size_t FreeListOpt::hash_device_address(DeviceAddr address) const
+inline size_t FreeListOpt::hash_device_address(DeviceAddr address)
 {
     // HACK: This hash is critical for performance, empirically found to be good for
     // the specific usecase
