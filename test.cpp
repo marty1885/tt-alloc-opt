@@ -16,6 +16,26 @@ TEST_CASE("Allocation") {
     REQUIRE(b.value() == 1_KiB);
 }
 
+TEST_CASE("Alignment") {
+    auto allocator = tt::tt_metal::allocator::FreeListOpt(1_GiB, 0, 1, 1_KiB);
+    auto a = allocator.allocate(64);
+    REQUIRE(a.has_value());
+    REQUIRE(a.value() == 0);
+    auto b = allocator.allocate(64);
+    REQUIRE(b.has_value());
+    REQUIRE(b.value() == 1_KiB);
+}
+
+TEST_CASE("Min allocation size") {
+    auto allocator = tt::tt_metal::allocator::FreeListOpt(1_GiB, 0, 1_KiB, 1);
+    auto a = allocator.allocate(1);
+    REQUIRE(a.has_value());
+    REQUIRE(a.value() == 0);
+    auto b = allocator.allocate(1);
+    REQUIRE(b.has_value());
+    REQUIRE(b.value() == 1_KiB);
+}
+
 TEST_CASE("Clear") {
     auto allocator = tt::tt_metal::allocator::FreeListOpt(1_GiB, 0, 1_KiB, 1_KiB);
     auto a = allocator.allocate(1_KiB);
