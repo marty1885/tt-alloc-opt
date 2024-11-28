@@ -17,40 +17,40 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 My allocator is orders of magnitude faster.
 
 ```
-2024-11-28T11:09:30+08:00
-Running ./tt-alloc-opt
+2024-11-29T00:15:34+08:00
+Running ./tt-alloc-opt-bench
 Run on (16 X 5132 MHz CPU s)
 CPU Caches:
   L1 Data 32 KiB (x8)
   L1 Instruction 32 KiB (x8)
   L2 Unified 1024 KiB (x8)
   L3 Unified 16384 KiB (x1)
-Load Average: 1.02, 0.90, 0.84
+Load Average: 0.89, 0.82, 0.81
 ***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
 -------------------------------------------------------------------------------------
 Benchmark                                           Time             CPU   Iterations
 -------------------------------------------------------------------------------------
-FreeListOpt/WorstCase                          156211 ns       155689 ns         4428
-FreeListOpt/MixedAllocations                    59938 ns        59760 ns        11755
-FreeListOpt/TypicalCase                         32595 ns        32492 ns        21033
-FreeListOpt/Small                                3676 ns         3663 ns       179884
-FreeListOpt/GetAvailableAddresses                 409 ns          407 ns      1726829
-FreeListOpt/Statistics                            379 ns          378 ns      1848454
-FreeListOpt/ShrinkReset                          11.7 ns         11.6 ns     60177702
-FreeList[BestMatch]/WorstCase                 8430132 ns      8396434 ns           81
-FreeList[BestMatch]/MixedAllocations          2219312 ns      2211079 ns          314
-FreeList[BestMatch]/TypicalCase                863138 ns       860375 ns          802
-FreeList[BestMatch]/Small                        7968 ns         7944 ns        85656
-FreeList[BestMatch]/GetAvailableAddresses         893 ns          890 ns       779186
-FreeList[BestMatch]/Statistics                   1107 ns         1103 ns       643461
-FreeList[BestMatch]/ShrinkReset                  3.44 ns         3.43 ns    204268507
-FreeList[FirstMatch]/WorstCase                7409143 ns      7380524 ns           95
-FreeList[FirstMatch]/MixedAllocations         2283444 ns      2274426 ns          296
-FreeList[FirstMatch]/TypicalCase               864990 ns       861908 ns          809
-FreeList[FirstMatch]/Small                       7726 ns         7705 ns        91195
-FreeList[FirstMatch]/GetAvailableAddresses        886 ns          882 ns       794174
-FreeList[FirstMatch]/Statistics                  1092 ns         1088 ns       645254
-FreeList[FirstMatch]/ShrinkReset                 3.47 ns         3.45 ns    202517500
+FreeListOpt/WorstCase                          118577 ns       118086 ns         5863
+FreeListOpt/MixedAllocations                    59143 ns        58927 ns        11783
+FreeListOpt/TypicalCase                         33745 ns        33621 ns        21207
+FreeListOpt/Small                                3529 ns         3519 ns       197782
+FreeListOpt/GetAvailableAddresses                 408 ns          406 ns      1764844
+FreeListOpt/Statistics                            383 ns          381 ns      1839916
+FreeListOpt/ShrinkReset                          11.9 ns         11.8 ns     60195283
+FreeList[BestMatch]/WorstCase                 8801668 ns      8770764 ns           80
+FreeList[BestMatch]/MixedAllocations          2258415 ns      2250632 ns          305
+FreeList[BestMatch]/TypicalCase                878087 ns       875110 ns          806
+FreeList[BestMatch]/Small                        7699 ns         7679 ns        92646
+FreeList[BestMatch]/GetAvailableAddresses         756 ns          753 ns       981334
+FreeList[BestMatch]/Statistics                   1093 ns         1089 ns       644297
+FreeList[BestMatch]/ShrinkReset                  3.51 ns         3.49 ns    203587009
+FreeList[FirstMatch]/WorstCase                7577280 ns      7550615 ns           92
+FreeList[FirstMatch]/MixedAllocations         2250868 ns      2243382 ns          309
+FreeList[FirstMatch]/TypicalCase               866912 ns       863442 ns          817
+FreeList[FirstMatch]/Small                       7348 ns         7321 ns        96339
+FreeList[FirstMatch]/GetAvailableAddresses        743 ns          741 ns       966950
+FreeList[FirstMatch]/Statistics                  1097 ns         1093 ns       636790
+FreeList[FirstMatch]/ShrinkReset                 3.46 ns         3.45 ns    202568406
 ```
 
 ## License

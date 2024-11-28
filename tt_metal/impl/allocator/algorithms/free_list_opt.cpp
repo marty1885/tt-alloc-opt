@@ -517,21 +517,19 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
     auto& free_blocks = free_blocks_segregated_by_size_[size_segregated_index];
     // Pushing to the back is faster than sorted insertion. But it increases fragmentation
     // free_blocks.push_back(block_index);
-    // The overhead is not worth it in benchmarks. Need real world data to confirm. But certainly it'll help with fragmentation
-    std::vector<size_t>::iterator it;
-    // from experience, the lower bound is only faster after a certain number of elements
-    if(free_blocks.size() < 30) {
-        for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
-            if(block_address_[*it] > block_address_[block_index]) {
-                break;
-            }
+    std::vector<size_t>::iterator it = free_blocks.end();
+    // Invserse search is faster than forward search as blocks are usually deallocated in reverse order (blocks allocated
+    // and been there are likely to be deallocate)
+    // XXX: I have absolutely no idea why selecting search begin and end depending on data causes GCC to drop performance
+    // considerably. Likewse, using another loop to scan forward if we know the address is low results in a  performance
+    // drop as well. Most likely GCC failed to auto-vectorize the loop
+    for(ssize_t i = free_blocks.size() - 1; i >= 0; i--) {
+        if(block_address_[free_blocks[i]] < block_address_[block_index]) {
+            it = free_blocks.begin() + i;
+            break;
         }
     }
-    else {
-        it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
-            return block_address_[a] < block_address_[b];
-        });
-    }
+
     free_blocks.insert(it, block_index);
 }
 
