@@ -81,7 +81,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
 {
     DeviceAddr alloc_size = align(std::max(size_bytes, min_allocation_size_));
 
-    // Find the best free block by looking at the segregated free blocks, it we can find a block in it's size class
+    // Find the best free block by looking at the segregated free blocks, if we can find a block in it's size class
     // we can be confident that it's the best block to allocate from. Else, look at the next size class. However the
     // blocks within a size class are not sorted by size, so we may not always find the best block.
 
@@ -116,8 +116,8 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     if(target_block_index == -1) {
         return std::nullopt;
     }
-    TT_ASSERT(segregated_list != nullptr, "Segegated list is null");
-    TT_ASSERT(segregated_item_index < segregated_list->size(), "Segegated item index out of bounds");
+    TT_ASSERT(segregated_list != nullptr, "Segregated list is null");
+    TT_ASSERT(segregated_item_index < segregated_list->size(), "Segregated item index out of bounds");
     TT_ASSERT(block_is_allocated_[target_block_index] == false, "Block we are trying allocate from is already allocated");
     segregated_list->erase(segregated_list->begin() + segregated_item_index);
 
@@ -130,7 +130,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     size_t allocated_block_index = allocate_in_block(target_block_index, alloc_size, offset);
     DeviceAddr start_address = block_address_[allocated_block_index];
     TT_FATAL(start_address + offset_bytes_ < address_limit || address_limit == 0, "Out of Memory: Cannot allocate at an address below {}. Allocation ends at {}", address_limit, start_address + offset_bytes_);
-    return block_address_[target_block_index] + offset_bytes_;
+    return start_address + offset_bytes_;
 }
 
 std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_start_address, DeviceAddr size_bytes)
@@ -211,7 +211,7 @@ size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size,
 
 void FreeListOpt::deallocate(DeviceAddr absolute_address)
 {
-    // The existing FreeList implementation does not check if the address actually allocated. Just return if it's not
+    // The existing FreeList implementation does not check if the address is actually allocated. Just return if it's not
     // Do we want to keep this behavior?
 
     auto block_index_opt = get_and_remove_from_alloc_table(absolute_address);
@@ -518,28 +518,29 @@ void FreeListOpt::insert_block_to_segregated_list(size_t block_index)
 {
     const size_t size_segregated_index = get_size_segregated_index(block_size_[block_index]);
     auto& free_blocks = free_blocks_segregated_by_size_[size_segregated_index];
-    free_blocks.push_back(block_index);
+    // Pushing to the back is faster than sorted insertion. But it increases fragmentation
+    // free_blocks.push_back(block_index);
     // The overhead is not worth it in benchmarks. Need real world data to confirm. But certainly it'll help with fragmentation
-    // std::vector<size_t>::iterator it;
-    // // from experience, the lower bound is only faster after a certain number of elements
-    // if(free_blocks.size() < 60) {
-    //     for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
-    //         if(block_address_[*it] > block_address_[block_index]) {
-    //             break;
-    //         }
-    //     }
-    // }
-    // else {
-    //     it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
-    //         return block_address_[a] < block_address_[b];
-    //     });
-    // }
-    // free_blocks.insert(it, block_index);
+    std::vector<size_t>::iterator it;
+    // from experience, the lower bound is only faster after a certain number of elements
+    if(free_blocks.size() < 30) {
+        for(it = free_blocks.begin(); it != free_blocks.end(); it++) {
+            if(block_address_[*it] > block_address_[block_index]) {
+                break;
+            }
+        }
+    }
+    else {
+        it = std::lower_bound(free_blocks.begin(), free_blocks.end(), block_index, [this](size_t a, size_t b) {
+            return block_address_[a] < block_address_[b];
+        });
+    }
+    free_blocks.insert(it, block_index);
 }
 
 inline size_t FreeListOpt::hash_device_address(DeviceAddr address) const
 {
-    // HACK: This hash is critical for performance, imperically found to be good for
+    // HACK: This hash is critical for performance, empirically found to be good for
     // the specific usecase
     return ((address) ^ (address >> 12) * 3) % n_alloc_table_buckets;
 }
@@ -562,7 +563,7 @@ std::optional<size_t> FreeListOpt::get_and_remove_from_alloc_table(DeviceAddr ad
 {
     size_t bucket = hash_device_address(address);
     // It's common to deallocate the last allocated block, so search from the back
-    for(size_t i = allocated_block_table_[bucket].size() - 1; i >= 0; i--) {
+    for(ssize_t i = allocated_block_table_[bucket].size() - 1; i >= 0; i--) {
         if(allocated_block_table_[bucket][i].first == address) {
             auto res = allocated_block_table_[bucket][i].second;
             allocated_block_table_[bucket].erase(allocated_block_table_[bucket].begin() + i);
