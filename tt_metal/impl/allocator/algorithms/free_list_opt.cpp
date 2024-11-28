@@ -417,6 +417,7 @@ void FreeListOpt::shrink_size(DeviceAddr shrink_size, bool bottom_up)
     
     // loop and scan the block list to find if the shrink cut into any allocated block
     size_t block_to_shrink = -1;
+    DeviceAddr shrunk_address = shrink_size_ + shrink_size;
     // TODO: There must be a way to force the beginning of all blocks be at index 0
     std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
     for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
@@ -428,18 +429,18 @@ void FreeListOpt::shrink_size(DeviceAddr shrink_size, bool bottom_up)
         }
         else if(block_is_allocated_[i]) {
             TT_FATAL(
-                block_address_[i] >= shrink_size,
+                block_address_[i] >= shrunk_address,
                 "Shrink size {} cuts into allocated block at address {}",
-                shrink_size,
+                shrunk_address,
                 block_address_[i]);
         }
-        else if(block_address_[i] <= shrink_size && block_address_[i] + block_size_[i] >= shrink_size) {
+        else if(block_address_[i] <= shrunk_address && block_address_[i] + block_size_[i] >= shrunk_address) {
             block_to_shrink = i;
             break;
         }
     }
 
-    TT_FATAL(block_to_shrink != -1, "Shrink size {} does not align with any block. This must be a bug", shrink_size);
+    TT_FATAL(block_to_shrink != -1, "Shrink size {} does not align with any block. This must be a bug", shrunk_address);
 
 
     // Find the relevant size segregated list
