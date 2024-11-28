@@ -38,6 +38,7 @@ FreeListOpt::FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, Dev
     block_next_block_.reserve(initial_block_count);
     block_is_allocated_.reserve(initial_block_count);
     free_meta_block_indices_.reserve(initial_block_count);
+    meta_block_is_allocated_.reserve(initial_block_count);
     free_blocks_segregated_by_size_.resize(size_segregated_count);
     for(auto& free_blocks : free_blocks_segregated_by_size_) {
         free_blocks.reserve(initial_block_count);
@@ -61,6 +62,7 @@ void FreeListOpt::init()
     block_next_block_.clear();
     block_is_allocated_.clear();
     free_meta_block_indices_.clear();
+    meta_block_is_allocated_.clear();
     for(auto& bucket : allocated_block_table_) {
         bucket.clear();
     }
@@ -74,6 +76,7 @@ void FreeListOpt::init()
     block_prev_block_.push_back(-1);
     block_next_block_.push_back(-1);
     block_is_allocated_.push_back(false);
+    meta_block_is_allocated_.push_back(true);
     free_blocks_segregated_by_size_[get_size_segregated_index(max_size_bytes_)].push_back(0);
 }
 
@@ -289,6 +292,7 @@ size_t FreeListOpt::alloc_meta_block(DeviceAddr address, DeviceAddr size, ssize_
         block_prev_block_.push_back(prev_block);
         block_next_block_.push_back(next_block);
         block_is_allocated_.push_back(is_allocated);
+        meta_block_is_allocated_.push_back(true);
     } else {
         idx = free_meta_block_indices_.back();
         free_meta_block_indices_.pop_back();
@@ -297,6 +301,7 @@ size_t FreeListOpt::alloc_meta_block(DeviceAddr address, DeviceAddr size, ssize_
         block_prev_block_[idx] = prev_block;
         block_next_block_[idx] = next_block;
         block_is_allocated_[idx] = is_allocated;
+        meta_block_is_allocated_[idx] = true;
     }
     return idx;
 }
@@ -304,6 +309,7 @@ size_t FreeListOpt::alloc_meta_block(DeviceAddr address, DeviceAddr size, ssize_
 void FreeListOpt::free_meta_block(size_t block_index)
 {
     free_meta_block_indices_.push_back(block_index);
+    meta_block_is_allocated_[block_index] = false;
 }
 
 void FreeListOpt::clear()
@@ -389,12 +395,8 @@ void FreeListOpt::dump_blocks(std::ostream &out) const
         out << leftpad(header, pad) << " ";
     }
     out << std::endl;
-    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
-    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
-        free_meta_blocks[free_meta_block_indices_[i]] = 1;
-    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(free_meta_blocks[i]) {
+        if(!meta_block_is_allocated_[i]) {
             continue;
         }
         out << leftpad_num(i, pad) << " " << leftpad_num(block_address_[i], pad) << " "
@@ -419,12 +421,8 @@ void FreeListOpt::shrink_size(DeviceAddr shrink_size, bool bottom_up)
     size_t block_to_shrink = -1;
     DeviceAddr shrunk_address = shrink_size_ + shrink_size;
     // TODO: There must be a way to force the beginning of all blocks be at index 0
-    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
-    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
-        free_meta_blocks[free_meta_block_indices_[i]] = 1;
-    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(free_meta_blocks[i]) {
+        if(!meta_block_is_allocated_[i]) {
             continue;
         }
         else if(block_is_allocated_[i]) {
@@ -474,12 +472,8 @@ void FreeListOpt::reset_size()
 
     // Create a new block, mark it as allocated and deallocate the old block so coalescing can happen
     ssize_t lowest_block_index = -1;
-    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
-    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
-        free_meta_blocks[free_meta_block_indices_[i]] = 1;
-    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(free_meta_blocks[i]) {
+        if(!meta_block_is_allocated_[i]) {
             continue;
         }
         if(block_address_[i] == shrink_size_) {

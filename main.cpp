@@ -132,9 +132,9 @@ void bench_statistics(tt::tt_metal::allocator::Algorithm& allocator, bm::State& 
 }
 
 void bench_shrink_reset(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
-    // auto a = allocator.allocate(20_KiB, false);
-    // auto b = allocator.allocate(20_KiB, false);
-    // allocator.deallocate(a.value());
+    auto a = allocator.allocate(20_KiB, false);
+    auto b = allocator.allocate(20_KiB, false);
+    allocator.deallocate(a.value());
     for (auto _ : state) {
         allocator.shrink_size(1_KiB);
         allocator.reset_size();

@@ -57,6 +57,7 @@ class FreeListOpt : public Algorithm {
     std::vector<ssize_t> block_prev_block_;
     std::vector<ssize_t> block_next_block_;
     std::vector<uint8_t> block_is_allocated_; // not using bool to avoid compacting
+    std::vector<uint8_t> meta_block_is_allocated_; // not using bool to avoid compacting
 
     // Metadata block indices that is not currently used (to reuse blocks instead of always allocating new ones)
     std::vector<size_t> free_meta_block_indices_;
