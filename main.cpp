@@ -131,6 +131,16 @@ void bench_statistics(tt::tt_metal::allocator::Algorithm& allocator, bm::State& 
     }
 }
 
+void bench_shrink_reset(tt::tt_metal::allocator::Algorithm& allocator, bm::State& state) {
+    // auto a = allocator.allocate(20_KiB, false);
+    // auto b = allocator.allocate(20_KiB, false);
+    // allocator.deallocate(a.value());
+    for (auto _ : state) {
+        allocator.shrink_size(1_KiB);
+        allocator.reset_size();
+    }
+}
+
 template <typename Allocator, typename BenchFunc, typename ... Args>
 void RegisterBenchmark(const std::string& name, BenchFunc func, Args&& ... args) {
     auto benchmark_func = [=](bm::State& state) {
@@ -154,6 +164,7 @@ void RegisterBenchmarksForAllocator(const std::string& allocator_name, Args&& ..
         {"Small", bench_small},
         {"GetAvailableAddresses", bench_get_available_addresses},
         {"Statistics", bench_statistics},
+        {"ShrinkReset", bench_shrink_reset}
     };
 
     for(auto& [name, func] : benchmarks) {
@@ -171,4 +182,11 @@ int main(int argc, char** argv) {
     bm::Initialize(&argc, argv);
     RegisterAllBenchmarks();
     bm::RunSpecifiedBenchmarks();
+
+    // auto allocator = tt::tt_metal::allocator::FreeListOpt(12_GiB, 0, 64, 64);
+    // allocator.shrink_size(1_KiB);
+    // allocator.reset_size();
+    // allocator.shrink_size(1_KiB);
+    // allocator.reset_size();
+    // allocator.dump_blocks(std::cout);
 }

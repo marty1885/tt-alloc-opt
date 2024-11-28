@@ -229,7 +229,7 @@ void FreeListOpt::deallocate(DeviceAddr absolute_address)
         size_t size_segregated_index = get_size_segregated_index(block_size_[prev_block]);
         std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
         auto it = std::find(segregated_list.begin(), segregated_list.end(), prev_block);
-        TT_ASSERT(it != segregated_list.end(), "Block not found in size segregated list");
+        TT_ASSERT(it != segregated_list.end(), "Prev block {} not found in size segregated list during deallocation of block {}", prev_block, block_index);
         segregated_list.erase(it);
 
         block_size_[prev_block] += block_size_[block_index];
@@ -247,7 +247,7 @@ void FreeListOpt::deallocate(DeviceAddr absolute_address)
         size_t size_segregated_index = get_size_segregated_index(block_size_[next_block]);
         std::vector<size_t>& segregated_list = free_blocks_segregated_by_size_[size_segregated_index];
         auto it = std::find(segregated_list.begin(), segregated_list.end(), next_block);
-        TT_ASSERT(it != segregated_list.end(), "Block not found in size segregated list");
+        TT_ASSERT(it != segregated_list.end(), "Next block {} not found in size segregated list during deallocation of block {}", next_block, block_index);
         segregated_list.erase(it);
 
         block_size_[block_index] += block_size_[next_block];
@@ -473,19 +473,42 @@ void FreeListOpt::reset_size()
     }
 
     // Create a new block, mark it as allocated and deallocate the old block so coalescing can happen
-    DeviceAddr lowest_address = std::numeric_limits<DeviceAddr>::max();
-    size_t lowest_block_index = -1;
+    ssize_t lowest_block_index = -1;
+    std::vector<uint8_t> free_meta_blocks(block_address_.size(), 0);
+    for(size_t i = 0; i < free_meta_block_indices_.size(); i++) {
+        free_meta_blocks[free_meta_block_indices_[i]] = 1;
+    }
     for(size_t i = 0; i < block_address_.size(); i++) {
-        if(block_address_[i] < lowest_address) {
-            lowest_address = block_address_[i];
+        if(free_meta_blocks[i]) {
+            continue;
+        }
+        if(block_address_[i] == shrink_size_) {
             lowest_block_index = i;
+            break;
         }
     }
-    size_t new_block_index = alloc_meta_block(0, shrink_size_, -1, lowest_block_index, true);
-    insert_block_to_alloc_table(0, new_block_index);
-    TT_ASSERT(block_prev_block_[lowest_block_index] == -1, "Lowest block should not have a previous block");
-    block_prev_block_[lowest_block_index] = new_block_index;
-    deallocate(0);
+    TT_ASSERT(lowest_block_index != -1, "Lowest block not found during reset size");
+
+    // There 2 cases to consider:
+    // 1. The lowest block is is free, which means we can just modify it's attributes
+    // 2. The lowest block is allocated, which means we need to create a new block and deallocate the old one
+    if(!block_is_allocated_[lowest_block_index]) {
+        auto* segregated_list = &free_blocks_segregated_by_size_[get_size_segregated_index(block_size_[lowest_block_index])];
+        for(size_t i = 0; i < segregated_list->size(); i++) {
+            if((*segregated_list)[i] == lowest_block_index) {
+                segregated_list->erase(segregated_list->begin() + i);
+                break;
+            }
+        }
+        block_size_[lowest_block_index] += shrink_size_;
+        block_address_[lowest_block_index] = 0;
+        insert_block_to_segregated_list(lowest_block_index);
+    } else {
+        size_t new_block_index = alloc_meta_block(0, shrink_size_, -1, lowest_block_index, false);
+        TT_ASSERT(block_prev_block_[lowest_block_index] == -1, "Lowest block should not have a previous block");
+        block_prev_block_[lowest_block_index] = new_block_index;
+        insert_block_to_segregated_list(new_block_index);
+    }
 
     max_size_bytes_ += shrink_size_;
     shrink_size_ = 0;
