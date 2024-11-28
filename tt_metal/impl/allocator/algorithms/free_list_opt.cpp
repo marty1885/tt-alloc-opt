@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <optional>
 #include <vector>
 #include <array>
@@ -93,6 +94,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
     TT_ASSERT(size_segregated_index < size_segregated_count, "Size segregated index out of bounds");
     std::vector<size_t>* segregated_list = nullptr;
     size_t segregated_item_index = 0;
+    size_t best_match_size = std::numeric_limits<size_t>::max();
 
     for(size_t i = size_segregated_index; i < free_blocks_segregated_by_size_.size(); i++) {
         auto& free_blocks = free_blocks_segregated_by_size_[i];
@@ -105,10 +107,11 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
                 segregated_item_index = j;
                 break;
             }
-            else if(block_size_[block_index] >= alloc_size && (target_block_index == -1 || block_size_[block_index] < block_size_[target_block_index])) {
+            else if(block_size_[block_index] >= alloc_size && block_size_[block_index] < best_match_size) {
                 target_block_index = block_index;
                 segregated_list = &free_blocks;
                 segregated_item_index = j;
+                best_match_size = block_size_[block_index];
             }
         }
         if(target_block_index != -1) {
@@ -143,6 +146,9 @@ std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_s
     size_t alloc_size = align(std::max(size_bytes, min_allocation_size_));
     ssize_t target_block_index = -1;
     for(size_t i = 0; i < block_address_.size(); i++) {
+        if(!meta_block_is_allocated_[i]) {
+            continue;
+        }
         size_t block_start = block_address_[i];
         size_t block_end = block_start + block_size_[i];
         if(absolute_start_address >= block_start && absolute_start_address + alloc_size <= block_end) {
@@ -328,9 +334,13 @@ Statistics FreeListOpt::get_statistics() const {
     std::vector<uint32_t> largest_free_block_addrs;
 
     for(size_t i = 0; i < block_address_.size(); i++) {
+        if(!meta_block_is_allocated_[i]) {
+            continue;
+        }
         if(block_is_allocated_[i]) {
             total_allocated_bytes += block_size_[i];
-        } else {
+        }
+        else {
             total_free_bytes += block_size_[i];
             if(block_size_[i] >= largest_free_block_bytes) {
                 largest_free_block_bytes = block_size_[i];
