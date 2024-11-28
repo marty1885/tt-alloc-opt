@@ -182,11 +182,4 @@ int main(int argc, char** argv) {
     bm::Initialize(&argc, argv);
     RegisterAllBenchmarks();
     bm::RunSpecifiedBenchmarks();
-
-    // auto allocator = tt::tt_metal::allocator::FreeListOpt(12_GiB, 0, 64, 64);
-    // allocator.shrink_size(1_KiB);
-    // allocator.reset_size();
-    // allocator.shrink_size(1_KiB);
-    // allocator.reset_size();
-    // allocator.dump_blocks(std::cout);
 }
