@@ -166,7 +166,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_s
 
 size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size, size_t offset)
 {
-    if(block_size_[block_index] == alloc_size) {
+    if(block_size_[block_index] == alloc_size && offset == 0) {
         block_is_allocated_[block_index] = true;
         insert_block_to_alloc_table(block_address_[block_index], block_index);
         return block_index;

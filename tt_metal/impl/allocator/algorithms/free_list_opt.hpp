@@ -22,11 +22,12 @@
 namespace tt {
 namespace tt_metal {
 namespace allocator {
-// Essentially the same free list algorithm as FreeList, but with (IMO absurdly) optimized implementations. Including
+// Essentially the same free list algorithm as FreeList with BestFit policy, but with (IMO absurdly) optimized code. Including
 // - SoA instead of linked list for the free list
-// - Size segregated for faster best-fit block search
+// - Size segregated to avoid unnecessary searches of smaller blocks
 // - Hash table to store allocated blocks for faster block lookup during deallocation
 // - Keeps metadata locality to avoid cache misses
+// - Metadata reuse to avoid allocations
 class FreeListOpt : public Algorithm {
     public:
     FreeListOpt(DeviceAddr max_size_bytes, DeviceAddr offset_bytes, DeviceAddr min_allocation_size, DeviceAddr alignment);
