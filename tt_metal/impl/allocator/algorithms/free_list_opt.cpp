@@ -143,6 +143,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate(DeviceAddr size_bytes, bool bott
 std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_start_address, DeviceAddr size_bytes)
 {
     // Nothing we can do but scan the free list
+    DeviceAddr address = absolute_start_address - offset_bytes_;
     size_t alloc_size = align(std::max(size_bytes, min_allocation_size_));
     ssize_t target_block_index = -1;
     for(size_t i = 0; i < block_address_.size(); i++) {
@@ -151,7 +152,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_s
         }
         size_t block_start = block_address_[i];
         size_t block_end = block_start + block_size_[i];
-        if(absolute_start_address >= block_start && absolute_start_address + alloc_size <= block_end) {
+        if(address >= block_start && address + alloc_size <= block_end) {
             target_block_index = i;
             break;
         }
@@ -170,7 +171,7 @@ std::optional<DeviceAddr> FreeListOpt::allocate_at_address(DeviceAddr absolute_s
 
     size_t offset = absolute_start_address - block_address_[target_block_index];
     size_t alloc_block_index = allocate_in_block(target_block_index, alloc_size, offset);
-    return block_address_[alloc_block_index] + offset_bytes_;
+    return absolute_start_address;
 }
 
 size_t FreeListOpt::allocate_in_block(size_t block_index, DeviceAddr alloc_size, size_t offset)
@@ -226,7 +227,8 @@ void FreeListOpt::deallocate(DeviceAddr absolute_address)
     // The existing FreeList implementation does not check if the address is actually allocated. Just return if it's not
     // Do we want to keep this behavior?
 
-    auto block_index_opt = get_and_remove_from_alloc_table(absolute_address);
+    DeviceAddr address = absolute_address - offset_bytes_;
+    auto block_index_opt = get_and_remove_from_alloc_table(address);
     if(!block_index_opt.has_value()) {
         return;
     }

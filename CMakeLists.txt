@@ -28,3 +28,7 @@ find_package(Catch2 3 REQUIRED)
 add_executable(tt-alloc-opt-test test.cpp)
 target_link_libraries(tt-alloc-opt-test tt-alloc-opt Catch2::Catch2WithMain)
 target_precompile_headers(tt-alloc-opt-test PUBLIC <catch2/catch_test_macros.hpp>)
+
+add_executable(tt-alloc-fragmentation fragmentation.cpp)
+target_link_libraries(tt-alloc-fragmentation tt-alloc-opt)
+target_precompile_headers(tt-alloc-fragmentation PUBLIC <fmt/core.h>)
